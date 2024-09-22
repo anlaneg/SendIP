@@ -18,7 +18,7 @@ typedef struct {
  */
 typedef struct {
 	void *data;
-	int alloc_len;
+	int alloc_len;/*需要申请多长报文*/
 	unsigned int modified;
 } sendip_data;
 

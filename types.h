@@ -8,7 +8,8 @@
 #define _SENDIP_TYPES_H
 
 /* Make sure we have bool */
-typedef int bool;
+//typedef int bool;
+#include <stdbool.h>
 #ifndef FALSE
 #define TRUE  (0==0)
 #define FALSE (!TRUE)

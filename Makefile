@@ -9,7 +9,7 @@ INSTALL ?= install
 #INSTALL=/usr/ucb/install
 
 CFLAGS=	-fPIC -fsigned-char -pipe -Wall -Wpointer-arith -Wwrite-strings \
-			-Wstrict-prototypes -Wnested-externs -Winline -Werror -g -Wcast-align \
+			-Wstrict-prototypes -Wnested-externs -Winline -g -Wcast-align \
 			-DSENDIP_LIBS=\"$(LIBDIR)\"
 #-Wcast-align causes problems on solaris, but not serious ones
 LDFLAGS=	-g -rdynamic -lm

@@ -48,7 +48,7 @@
 typedef struct _s_m {
   struct _s_m *next;
   struct _s_m *prev;
-  char *name;
+  char *name;/*模块名称*/
   char optchar;
   sendip_data * (*initialize)(void);
   bool (*do_opt)(const char *optstring, const char *optarg, 
@@ -71,12 +71,13 @@ typedef struct {
   char ss_padding[122];
 } _sockaddr_storage;
 
-static int num_opts=0;
+static int num_opts=0;/*记录系统总选项数目*/
 static sendip_module *first;
 static sendip_module *last;
 
 static char *progname;
 
+/*报文发送*/
 static int sendpacket(sendip_data *data, char *hostname, int af_type,
 							 bool verbose, char *sockopts) {
   _sockaddr_storage *to = malloc(sizeof(_sockaddr_storage));
@@ -102,6 +103,7 @@ static int sendpacket(sendip_data *data, char *hostname, int af_type,
   }
   memset(to, 0, sizeof(_sockaddr_storage));
   
+  /*取对端地址*/
   if ((host = gethostbyname2(hostname, af_type)) == NULL) {
     perror("Couldn't get destination host: gethostbyname2()");
     free(to);
@@ -124,6 +126,7 @@ static int sendpacket(sendip_data *data, char *hostname, int af_type,
     break;
   }
   
+  /*显示报文内容*/
   if(verbose) { 
     int i, j;  
     printf("Final packet data:\n");
@@ -140,6 +143,7 @@ static int sendpacket(sendip_data *data, char *hostname, int af_type,
     }
   }
   
+  /*打开af_inet/af_inet6 raw socket*/
   if ((s = socket(af_type, SOCK_RAW, IPPROTO_RAW)) < 0) {
     perror("Couldn't open RAW socket");
     free(to);
@@ -149,6 +153,7 @@ static int sendpacket(sendip_data *data, char *hostname, int af_type,
   /* Set socket options */
   if(verbose) printf("Setting socket options:\n");
   if(sockopts && strlen(sockopts)) {
+	  /*用户要求了socket选项*/
     int i;
     const int on=1;
     for(i=0;i<strlen(sockopts);i++) {
@@ -233,7 +238,8 @@ static int sendpacket(sendip_data *data, char *hostname, int af_type,
 #endif /* __sun__ */
   
   /* Send the packet */
-  sent = sendto(s, (char *)data->data, data->alloc_len, 0, (void *)to, tolen);
+  /*向外发送*/
+  sent = sendto(s, (char *)data->data, data->alloc_len, 0, (void *)to/*目的地址*/, tolen);
   if (sent == data->alloc_len) {
     if(verbose) printf("Sent %d bytes to %s\n",sent,hostname);
   } else {
@@ -274,6 +280,7 @@ static bool load_module(char *modname) {
   
   for(cur=first;cur!=NULL;cur=cur->next) {
     if(!strcmp(modname,cur->name)) {
+      /*此模块已加载，退出,但此时需要添加newmod,它是cur的一个副本*/
       memcpy(newmod,cur,sizeof(sendip_module));
       newmod->num_opts=0;
       goto out;
@@ -283,12 +290,15 @@ static bool load_module(char *modname) {
   strcpy(newmod->name,modname);
   if(NULL==(newmod->handle=dlopen(newmod->name,RTLD_NOW))) {
     char *error0=strdup(dlerror());
+    /*修改为当前路径，再尝试一次*/
     sprintf(newmod->name,"./%s.so",modname);
     if(NULL==(newmod->handle=dlopen(newmod->name,RTLD_NOW))) {
       char *error1=strdup(dlerror());
+      /*修改到SENDIP_LIBS路径，再尝试一次*/
       sprintf(newmod->name,"%s/%s.so",SENDIP_LIBS,modname);
       if(NULL==(newmod->handle=dlopen(newmod->name,RTLD_NOW))) {
 		  char *error2=strdup(dlerror());
+		  /*modname中也许包含了.so后缀，尝试下*/
 		  sprintf(newmod->name,"%s/%s",SENDIP_LIBS,modname);
 		  if(NULL==(newmod->handle=dlopen(newmod->name,RTLD_NOW))) {
 			 char *error3=strdup(dlerror());
@@ -305,7 +315,11 @@ static bool load_module(char *modname) {
     }
     free(error0);
   }
+
+  /*modname路径及名称确认*/
   strcpy(newmod->name,modname);
+
+  /*在so中查找initialize函数*/
   if(NULL==(newmod->initialize=dlsym(newmod->handle,"initialize"))) {
     fprintf(stderr,"%s doesn't have an initialize function: %s\n",modname,
 				dlerror());
@@ -313,6 +327,8 @@ static bool load_module(char *modname) {
     free(newmod);
     return FALSE;
   }
+
+  /*在so中查找do_opt函数*/
   if(NULL==(newmod->do_opt=dlsym(newmod->handle,"do_opt"))) {
     fprintf(stderr,"%s doesn't contain a do_opt function: %s\n",modname,
 				dlerror());
@@ -320,6 +336,8 @@ static bool load_module(char *modname) {
     free(newmod);
     return FALSE;
   }
+
+  /*在so中查找set_addr函数*/
   newmod->set_addr=dlsym(newmod->handle,"set_addr"); // don't care if fails
   if(NULL==(newmod->finalize=dlsym(newmod->handle,"finalize"))) {
     fprintf(stderr,"%s\n",dlerror());
@@ -327,32 +345,42 @@ static bool load_module(char *modname) {
     free(newmod);
     return FALSE;
   }
+
+  /*在so中查找num_opts函数*/
   if(NULL==(n_opts=dlsym(newmod->handle,"num_opts"))) {
     fprintf(stderr,"%s\n",dlerror());
     dlclose(newmod->handle);
     free(newmod);
     return FALSE;
   }
+
+  /*在so中查找get_opts函数*/
   if(NULL==(get_opts=dlsym(newmod->handle,"get_opts"))) {
     fprintf(stderr,"%s\n",dlerror());
     dlclose(newmod->handle);
     free(newmod);
     return FALSE;
   }
+
+  /*在so中查找get_optchar函数*/
   if(NULL==(get_optchar=dlsym(newmod->handle,"get_optchar"))) {
     fprintf(stderr,"%s\n",dlerror());
     dlclose(newmod->handle);
     free(newmod);
     return FALSE;
   }
+
+  /*触发so中的函数，获知选项数目，短选项，及选项结构体*/
   newmod->num_opts = n_opts();
   newmod->optchar=get_optchar();
   /* TODO: check uniqueness */
   newmod->opts = get_opts();
   
+  /*系统总选项数组增多*/
   num_opts+=newmod->num_opts;
   
  out:
+ /*将新加载的模块填串进first链表中*/
   newmod->pack=NULL;
   newmod->prev=last;
   newmod->next=NULL;
@@ -422,7 +450,7 @@ int main(int argc, char *const argv[]) {
   sendip_module *mod;
   int optc;
   
-  int num_modules=0;
+  int num_modules=0;/*加载的模块数目*/
   
   sendip_data packet;
   
@@ -439,6 +467,7 @@ int main(int argc, char *const argv[]) {
   while(gnuoptind<argc && (EOF != (optc=gnugetopt(argc,argv,"-p:vd:hf:s:")))) {
 	 switch(optc) {
 	 case 'p':
+		 /*扫描-p选项，按顺序加载指定模块*/
 		if(load_module(gnuoptarg))
 		  num_modules++;
 		break;
@@ -449,6 +478,7 @@ int main(int argc, char *const argv[]) {
 		if(data == NULL) {
 		  data=gnuoptarg;
 		  if(*data=='r') {
+			  /*-d r<n> 选项，随机生成n个字节数据，将其做为data*/
 			 /* random data, format is r<n> when n is number of bytes */
 			 datalen = atoi(data+1);
 			 if(datalen < 1) {
@@ -461,6 +491,7 @@ int main(int argc, char *const argv[]) {
 				data[i]=(char)random();
 			 randomflag=TRUE;
 		  } else {
+			  /*普通的-d,指明：1。以0[xX]开头的16进制；2。以0开头的8进制；3。其它按字符串处理*/
 			 /* "normal" data */
 			 datalen = compact_string(data);
 		  }
@@ -474,6 +505,7 @@ int main(int argc, char *const argv[]) {
 		break;
 	 case 'f':
 		if(data == NULL) {
+		  /*通过-f给定data file*/
 		  datafile=open(gnuoptarg,O_RDONLY);
 		  if(datafile == -1) {
 			 perror("Couldn't open data file");
@@ -519,6 +551,7 @@ int main(int argc, char *const argv[]) {
   }
   
   /* Build the getopt listings */
+  /*构造各模块引入的选项，将其合并到opts中*/
   opts = malloc((1+num_opts)*sizeof(struct option));
   if(opts==NULL) {
 	 if(sockopts) free(sockopts);
@@ -543,6 +576,7 @@ int main(int argc, char *const argv[]) {
   if(verbosity) printf("Added %d options\n",num_opts);
   
   /* Initialize all */
+  /*模块初始化，各模块生成自已的mod->pack*/
   for(mod=first;mod!=NULL;mod=mod->next) {
 	 if(verbosity) printf("Initializing module %s\n",mod->name);
 	 mod->pack=mod->initialize();
@@ -573,9 +607,10 @@ int main(int argc, char *const argv[]) {
 		break;
 	 default:
 		for(mod=first;mod!=NULL;mod=mod->next) {
-		  if(mod->optchar==optc) {
+		  if(mod->optchar==optc/*optc匹配*/) {
 			 
 			 /* Random option arguments */
+			 /*为各模块设置的-r参数，用于生成随机值*/
 			 if(gnuoptarg != NULL && !strcmp(gnuoptarg,"r")) {
 				/* need a 32 bit number, but random() is signed and
 					nonnegative so only 31bits - we simply repeat one */
@@ -585,6 +620,7 @@ int main(int argc, char *const argv[]) {
 						gnuoptarg = rbuff;
 			 }
 			 
+			 /*使模块具体处理选项，产生报文内容*/
 			 if(!mod->do_opt(opts[longindex].name,gnuoptarg,mod->pack)) {
 				usage=TRUE;
 			 }
@@ -601,6 +637,7 @@ int main(int argc, char *const argv[]) {
 	 if(argc-gnuoptind < 1) fprintf(stderr,"No hostname specified\n");
 	 else fprintf(stderr,"More than one hostname specified\n");
   } else {
+	  /*设置目标地址*/
 	 if(first && first->set_addr) {
 		first->set_addr(argv[gnuoptind],first->pack);
 	 }
@@ -613,6 +650,7 @@ int main(int argc, char *const argv[]) {
   free(opts); /* don't need them any more */
   
   if(usage) {
+	  /*显示用法*/
 	 print_usage();
 	 unload_modules(TRUE,verbosity);
 	 if(datafile != -1) {
@@ -632,19 +670,24 @@ int main(int argc, char *const argv[]) {
   packet.data = NULL;
   packet.alloc_len = 0;
   packet.modified = 0;
+  /*获取各模块需要的报文总长度*/
   for(mod=first;mod!=NULL;mod=mod->next) {
 	 packet.alloc_len+=mod->pack->alloc_len;
   }
+  /*还需要包含用户指定的datalen*/
   if(data != NULL) packet.alloc_len+=datalen;
   packet.data = malloc(packet.alloc_len);
+
+  /*各模块将报文内容填入*/
   for(i=0, mod=first;mod!=NULL;mod=mod->next) {
 	 memcpy((char *)packet.data+i,mod->pack->data,mod->pack->alloc_len);
 	 free(mod->pack->data);
-	 mod->pack->data = (char *)packet.data+i;
+	 mod->pack->data = (char *)packet.data+i;/*更改mod->pack使其指向最终内容*/
 	 i+=mod->pack->alloc_len;
   }
   
   /* Add any data */
+  /*将用户指定的数据内容填入*/
   if(data != NULL) memcpy((char *)packet.data+i,data,datalen);
   if(datafile != -1) {
 	 munmap(data,datalen);
@@ -662,23 +705,26 @@ int main(int argc, char *const argv[]) {
 	 d.alloc_len = datalen;
 	 d.data = (char *)packet.data+packet.alloc_len-datalen;
 	 
+	 /*正序收集各header*/
 	 for(i=0,mod=first;mod!=NULL;mod=mod->next,i++) {
 		hdrs[i]=mod->optchar;
 		headers[i]=mod->pack;
 	 }
 	 
+	 /*反序调用finalize回调，*/
 	 for(i=num_modules-1,mod=last;mod!=NULL;mod=mod->prev,i--) {
 		
 		if(verbosity) printf("Finalizing module %s\n",mod->name);
 		
 		/* Remove this header from enclosing list */
-		hdrs[i]='\0';
-		headers[i] = NULL;
+		hdrs[i]='\0';/*移除当前header的选项为'\0'*/
+		headers[i] = NULL;/*移除当前header为NULL*/
 		
+		/*执行当前mod的finalize,此时headers自i向后均已清空*/
 		mod->finalize(hdrs, headers, &d, mod->pack);
 		
 		/* Get everything ready for the next call */
-		d.data=(char *)d.data-mod->pack->alloc_len;
+		d.data=(char *)d.data-mod->pack->alloc_len;/*data指针前移*/
 		d.alloc_len+=mod->pack->alloc_len;
 	 }
   }
@@ -697,8 +743,8 @@ int main(int argc, char *const argv[]) {
 		  af_type = AF_INET;
 		}
 	 }
-	 else if(first->optchar=='i') af_type = AF_INET;
-	 else if(first->optchar=='6') af_type = AF_INET6;
+	 else if(first->optchar=='i') af_type = AF_INET; /*采用ipv4协议发包*/
+	 else if(first->optchar=='6') af_type = AF_INET6;/*采用ipv6协议发包*/
 	 else {
 		fprintf(stderr,"Either IPv4 or IPv6 must be the outermost packet\n");
 		unload_modules(FALSE,verbosity);
@@ -706,7 +752,7 @@ int main(int argc, char *const argv[]) {
 		if(sockopts) free(sockopts);
 		return 1;
 	 }
-	 i = sendpacket(&packet,argv[gnuoptind],af_type,verbosity,sockopts);
+	 i = sendpacket(&packet/*构造好的报文*/,argv[gnuoptind]/*目标地址*/,af_type,verbosity,sockopts);
 	 free(packet.data);
 	 free(sockopts);
   }

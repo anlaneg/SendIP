@@ -123,6 +123,7 @@ bool do_opt(char *opt, char *arg, sendip_data *pack) {
 	ip_header *iph = (ip_header *)pack->data;
 	switch(opt[1]) {
 	case 's':
+		/*使用用户指定的saddr*/
 		iph->saddr = inet_addr(arg);
 		pack->modified |= IP_MOD_SADDR;
 		break;

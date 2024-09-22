@@ -26,16 +26,18 @@ int compact_string(char *data_out) {
 					return 0;
 				}
 				if( i&1) {
+					/*字节全了，直接设置*/
 					*(data_out++)=c;  // odd nibble - output it
 					c='\0';
 				} else {
+					/*半个字节，移位处理*/
 					c<<=4;   // even nibble - shift to top of byte
 				}
 				data_in++; i++;
 			}
 			*data_out=c; // make sure last nibble is added
 			i++; i>>=1;  // i was a nibble count...
-			return i;
+			return i;/*返回字节长度*/
 		} else {
          /* Octal */
 			char c='\0';
